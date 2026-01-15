@@ -78,7 +78,7 @@ function App() {
       )}
       <header className="app-header">
         <div className="header-brand">
-          <img src="/pwa-192x192.png" alt="Kuti Do Logo" className="app-logo" />
+          <img src="pwa-192x192.png" alt="Kuti Do Logo" className="app-logo" />
           <h1>Kuti Do..</h1>
           <button className="icon-btn" onClick={() => setIsCreditsOpen(true)} title="Credits" style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', marginLeft: '10px' }}>
             <FaInfoCircle size={20} />
