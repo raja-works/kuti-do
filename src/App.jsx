@@ -127,7 +127,7 @@ function App() {
             brushSize={brushSize}
             imageSrc={imageSrc}
             width={800}
-            height={600}
+            height={945}
           />
         </div>
         <Toolbar
