@@ -139,12 +139,22 @@ const CanvasEditor = forwardRef(({
     const getScaledCoordinates = (e) => {
         const canvas = canvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
-        const { offsetX, offsetY } = e.nativeEvent;
-        const scaleX = canvas.width / canvas.clientWidth;
-        const scaleY = canvas.height / canvas.clientHeight;
+
+        const rect = canvas.getBoundingClientRect();
+        // Use clientX/Y from the native event (works for PointerEvent)
+        const clientX = e.nativeEvent.clientX;
+        const clientY = e.nativeEvent.clientY;
+
+        // Calculate position relative to canvas
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        // Scale based on actual displayed size vs internal resolution
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
         return {
-            x: offsetX * scaleX,
-            y: offsetY * scaleY
+            x: x * scaleX,
+            y: y * scaleY
         };
     };
 
