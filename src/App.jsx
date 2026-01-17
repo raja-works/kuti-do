@@ -22,7 +22,7 @@ function App() {
   // Simple check for mobile logic
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   const canvasConfig = {
-    width: isMobile ? window.innerWidth - 20 : 800,
+    width: isMobile ? window.innerWidth : 800,
     height: isMobile ? 950 : 600
   };
 
