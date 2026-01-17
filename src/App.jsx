@@ -143,14 +143,6 @@ function App() {
                 <FaDownload />
                 <span>Save</span>
               </label>
-              <button
-                className="mobile-menu-btn"
-                onClick={() => setIsToolbarOpen(!isToolbarOpen)}
-                title="Open Color Palette"
-              >
-                <FaPalette size={24} color="#FF6B6B" />
-                <FaChevronLeft size={12} color="#FF6B6B" />
-              </button>
             </div>
           </div>
         </header>

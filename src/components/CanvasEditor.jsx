@@ -1,9 +1,8 @@
 import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
 import { floodFill } from '../utils/floodFill';
-import brushSoundFile from '../assets/pincel-en-lienzo-100953.mp3';
+import brushSoundFile from '../assets/paint_brush_07-97965.mp3';
 import bucketSoundFile from '../assets/normal-paint-strokes_1-2-91567.mp3';
 
-// Placeholder sound for now
 const CanvasEditor = forwardRef(({
     imageSrc,
     width = 800,
@@ -16,54 +15,105 @@ const CanvasEditor = forwardRef(({
     const [isDrawing, setIsDrawing] = useState(false);
     const [isFilling, setIsFilling] = useState(false);
     const contextRef = useRef(null);
-    const brushAudioRef = useRef(null);
-    const bucketAudioRef = useRef(null);
+
+    // Web Audio API refs
+    const audioContextRef = useRef(null);
+    const brushBufferRef = useRef(null);
+    const bucketBufferRef = useRef(null);
+    const activeBrushSourceRef = useRef(null);
+    const activeBrushGainRef = useRef(null);
+    const lastPointRef = useRef(null);
+    const lastTimeRef = useRef(0);
 
     useEffect(() => {
-        // Initialize brush audio (looping)
-        const brushAudio = new Audio(brushSoundFile);
-        brushAudio.loop = true;
-        brushAudioRef.current = brushAudio;
+        // Init Audio Context
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioContextRef.current = new AudioContext();
 
-        // Initialize bucket audio (looping for duration of fill)
-        const bucketAudio = new Audio(bucketSoundFile);
-        bucketAudio.loop = true;
-        bucketAudioRef.current = bucketAudio;
+        // Load Sprites/Buffers
+        const loadSound = async (url, ref) => {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+            ref.current = audioBuffer;
+        };
+
+        loadSound(brushSoundFile, brushBufferRef);
+        loadSound(bucketSoundFile, bucketBufferRef);
 
         return () => {
-            brushAudio.pause();
-            brushAudio.currentTime = 0;
-            bucketAudio.pause();
-            bucketAudio.currentTime = 0;
-        }
+            if (audioContextRef.current) {
+                audioContextRef.current.close();
+            }
+        };
     }, []);
 
     const startBrushSound = () => {
-        if (activeTool === 'brush' && brushAudioRef.current) {
-            brushAudioRef.current.currentTime = 0;
-            brushAudioRef.current.play().catch(e => console.log("Audio play failed", e));
+        if (activeTool === 'brush' && audioContextRef.current && brushBufferRef.current) {
+            // Resume context if suspended (browser policy)
+            if (audioContextRef.current.state === 'suspended') {
+                audioContextRef.current.resume();
+            }
+
+            const source = audioContextRef.current.createBufferSource();
+            const gainNode = audioContextRef.current.createGain();
+
+            source.buffer = brushBufferRef.current;
+            source.loop = true;
+            // Randomize start time to avoid repetition
+            const randomOffset = Math.random() * source.buffer.duration;
+
+            source.connect(gainNode);
+            gainNode.connect(audioContextRef.current.destination);
+
+            // Start low volume, will modulate validly on move
+            gainNode.gain.setValueAtTime(0.1, audioContextRef.current.currentTime);
+
+            source.start(0, randomOffset);
+
+            activeBrushSourceRef.current = source;
+            activeBrushGainRef.current = gainNode;
         }
     };
 
+
     const stopBrushSound = () => {
-        if (brushAudioRef.current) {
-            brushAudioRef.current.pause();
-            brushAudioRef.current.currentTime = 0;
+        if (activeBrushSourceRef.current) {
+            try {
+                // Exponential ramp down to avoid clicks
+                if (activeBrushGainRef.current) {
+                    activeBrushGainRef.current.gain.linearRampToValueAtTime(0.001, audioContextRef.current.currentTime + 0.1);
+                }
+                activeBrushSourceRef.current.stop(audioContextRef.current.currentTime + 0.1);
+            } catch (e) {
+                // Ignore if already stopped
+            }
+            activeBrushSourceRef.current = null;
+            activeBrushGainRef.current = null;
         }
     };
 
     const startBucketSound = () => {
-        if (bucketAudioRef.current) {
-            bucketAudioRef.current.currentTime = 0;
-            bucketAudioRef.current.play().catch(e => console.log("Bucket audio failed", e));
+        if (audioContextRef.current && bucketBufferRef.current) {
+            if (audioContextRef.current.state === 'suspended') {
+                audioContextRef.current.resume();
+            }
+            const source = audioContextRef.current.createBufferSource();
+            const gainNode = audioContextRef.current.createGain();
+            source.buffer = bucketBufferRef.current;
+            source.loop = true;
+            source.connect(gainNode);
+            gainNode.connect(audioContextRef.current.destination);
+            gainNode.gain.setValueAtTime(0.6, audioContextRef.current.currentTime);
+            source.start(0);
+
+            activeBrushSourceRef.current = source;
+            activeBrushGainRef.current = gainNode;
         }
     };
 
     const stopBucketSound = () => {
-        if (bucketAudioRef.current) {
-            bucketAudioRef.current.pause();
-            bucketAudioRef.current.currentTime = 0;
-        }
+        stopBrushSound();
     };
 
     useImperativeHandle(ref, () => ({
@@ -160,11 +210,10 @@ const CanvasEditor = forwardRef(({
 
     const handlePointerDown = (e) => {
         e.preventDefault();
-        if (isFilling) return; // Block interaction if filling
-
-        const { x, y } = getScaledCoordinates(e);
+        if (isFilling) return;
 
         if (activeTool === 'bucket') {
+            const { x, y } = getScaledCoordinates(e);
             const ctx = contextRef.current;
             const imageData = ctx.getImageData(0, 0, width, height);
 
@@ -175,7 +224,7 @@ const CanvasEditor = forwardRef(({
 
             const animateFill = () => {
                 const res = fillGenerator.next();
-                ctx.putImageData(imageData, 0, 0); // Render current state
+                ctx.putImageData(imageData, 0, 0);
 
                 if (!res.done) {
                     requestAnimationFrame(animateFill);
@@ -184,13 +233,17 @@ const CanvasEditor = forwardRef(({
                     stopBucketSound();
                 }
             };
-
             requestAnimationFrame(animateFill);
 
         } else {
+            const { x, y } = getScaledCoordinates(e);
             contextRef.current.beginPath();
             contextRef.current.moveTo(x, y);
             setIsDrawing(true);
+
+            lastPointRef.current = { x, y };
+            lastTimeRef.current = Date.now();
+
             startBrushSound();
         }
     };
@@ -198,9 +251,42 @@ const CanvasEditor = forwardRef(({
     const handlePointerMove = (e) => {
         e.preventDefault();
         if (!isDrawing || activeTool === 'bucket' || isFilling) return;
+
         const { x, y } = getScaledCoordinates(e);
         contextRef.current.lineTo(x, y);
         contextRef.current.stroke();
+
+        // Modulate Sound
+        if (activeBrushGainRef.current && lastPointRef.current) {
+            const now = Date.now();
+            const timeDelta = now - lastTimeRef.current;
+
+            if (timeDelta > 5) { // Throttle updates slightly
+                const dist = Math.hypot(x - lastPointRef.current.x, y - lastPointRef.current.y);
+                const speed = dist / timeDelta; // pixels per ms
+
+                // Map speed to volume (0.0 to 1.0)
+                // Assuming max typical speed ~ 3-4 px/ms (?)
+                const minGain = 0.1;
+                const maxGain = 0.8;
+                const normalizedSpeed = Math.min(speed / 2.5, 1); // Clamp at 2.5 px/ms
+                const targetGain = minGain + (normalizedSpeed * (maxGain - minGain));
+
+                // Map speed to pitch (0.9 to 1.2) - faster strokes = slightly higher pitch
+                const minRate = 0.9;
+                const maxRate = 1.2;
+                const targetRate = minRate + (normalizedSpeed * (maxRate - minRate));
+
+                // Smooth transition
+                activeBrushGainRef.current.gain.setTargetAtTime(targetGain, audioContextRef.current.currentTime, 0.05);
+                if (activeBrushSourceRef.current && activeBrushSourceRef.current.playbackRate) {
+                    activeBrushSourceRef.current.playbackRate.setTargetAtTime(targetRate, audioContextRef.current.currentTime, 0.05);
+                }
+
+                lastPointRef.current = { x, y };
+                lastTimeRef.current = now;
+            }
+        }
     };
 
     const handlePointerUp = (e) => {
